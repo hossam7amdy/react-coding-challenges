@@ -1,5 +1,3 @@
-import { createElement, useState, type ChangeEvent } from "react";
-import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
   act,
   render,
@@ -8,6 +6,9 @@ import {
   fireEvent,
   renderHook,
 } from "@testing-library/react";
+import { createElement, useState, type ChangeEvent } from "react";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+
 import { useDebounce } from "./use-debounce";
 
 beforeEach(() => {

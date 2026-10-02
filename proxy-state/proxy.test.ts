@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+
 import { proxy, snapshot, subscribe } from "./proxy";
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));

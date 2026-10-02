@@ -1,4 +1,3 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   render,
   screen,
@@ -7,6 +6,8 @@ import {
   fireEvent,
 } from "@testing-library/react";
 import { useState } from "react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+
 import { proxy, snapshot } from "./proxy";
 import { useSnapshot } from "./use-snapshot";
 
