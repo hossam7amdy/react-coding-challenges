@@ -1,4 +1,5 @@
 import { useEffect, useReducer } from "react";
+
 import { snapshot, subscribe, type Snapshot } from "./proxy";
 
 export function useSnapshot<T extends object>(p: T): Snapshot<T> {
