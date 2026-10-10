@@ -1,17 +1,18 @@
-import {
-  type ChangeEvent,
-  type FocusEvent,
-  type SubmitEvent,
-} from "react";
+import { type ChangeEvent, type FocusEvent, type SubmitEvent } from "react";
 
-export type FieldElement = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+export type FieldElement =
+  | HTMLInputElement
+  | HTMLSelectElement
+  | HTMLTextAreaElement;
 
 export interface UseFormOptions<T> {
   initialValues: T;
 }
 
 /** Checkboxes and radios need more than a name to be wired up. */
-export type RegisterOptions = { type: "checkbox" } | { type: "radio"; value: string };
+export type RegisterOptions =
+  | { type: "checkbox" }
+  | { type: "radio"; value: string };
 
 export interface FieldProps {
   name: string;
@@ -38,5 +39,5 @@ export interface UseFormReturn<T> {
 export function useForm<T extends Record<string, unknown>>(
   _options: UseFormOptions<T>,
 ): UseFormReturn<T> {
-  throw new Error("Not implemented!")
+  throw new Error("Not implemented!");
 }

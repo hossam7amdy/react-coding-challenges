@@ -1,7 +1,23 @@
-import { useEffect, type ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect, type ReactNode } from "react";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
+
 import { useForm, type UseFormReturn } from "./use-form";
 
 // React reports bad input values (NaN, null, controlled <-> uncontrolled) and
@@ -66,12 +82,18 @@ async function settle(pending: Deferred) {
   });
 }
 
-const textbox = (name: string) => screen.getByRole<HTMLInputElement>("textbox", { name });
-const spinbutton = (name: string) => screen.getByRole<HTMLInputElement>("spinbutton", { name });
-const checkbox = (name: string) => screen.getByRole<HTMLInputElement>("checkbox", { name });
-const radio = (name: string) => screen.getByRole<HTMLInputElement>("radio", { name });
-const combobox = (name: string) => screen.getByRole<HTMLSelectElement>("combobox", { name });
-const listbox = (name: string) => screen.getByRole<HTMLSelectElement>("listbox", { name });
+const textbox = (name: string) =>
+  screen.getByRole<HTMLInputElement>("textbox", { name });
+const spinbutton = (name: string) =>
+  screen.getByRole<HTMLInputElement>("spinbutton", { name });
+const checkbox = (name: string) =>
+  screen.getByRole<HTMLInputElement>("checkbox", { name });
+const radio = (name: string) =>
+  screen.getByRole<HTMLInputElement>("radio", { name });
+const combobox = (name: string) =>
+  screen.getByRole<HTMLSelectElement>("combobox", { name });
+const listbox = (name: string) =>
+  screen.getByRole<HTMLSelectElement>("listbox", { name });
 const selected = (select: HTMLSelectElement) =>
   Array.from(select.selectedOptions, (option) => option.value);
 
@@ -79,8 +101,18 @@ type Name = { first: string; last: string };
 
 const nameFields = ({ values, handleChange }: UseFormReturn<Name>) => (
   <>
-    <input aria-label="First" name="first" value={values.first} onChange={handleChange} />
-    <input aria-label="Last" name="last" value={values.last} onChange={handleChange} />
+    <input
+      aria-label="First"
+      name="first"
+      value={values.first}
+      onChange={handleChange}
+    />
+    <input
+      aria-label="Last"
+      name="last"
+      value={values.last}
+      onChange={handleChange}
+    />
   </>
 );
 
@@ -116,9 +148,17 @@ describe("text fields", () => {
   });
 
   it("handles a textarea with the same handleChange", async () => {
-    const { result, user } = renderForm({ bio: "" }, ({ values, handleChange }) => (
-      <textarea aria-label="Bio" name="bio" value={values.bio} onChange={handleChange} />
-    ));
+    const { result, user } = renderForm(
+      { bio: "" },
+      ({ values, handleChange }) => (
+        <textarea
+          aria-label="Bio"
+          name="bio"
+          value={values.bio}
+          onChange={handleChange}
+        />
+      ),
+    );
 
     await user.type(textbox("Bio"), "Wrote the first program");
 
@@ -128,15 +168,18 @@ describe("text fields", () => {
 
 describe("all input types", () => {
   it("stores a checkbox as a boolean", async () => {
-    const { result, user } = renderForm({ subscribe: false }, ({ values, handleChange }) => (
-      <input
-        type="checkbox"
-        aria-label="Subscribe"
-        name="subscribe"
-        checked={values.subscribe}
-        onChange={handleChange}
-      />
-    ));
+    const { result, user } = renderForm(
+      { subscribe: false },
+      ({ values, handleChange }) => (
+        <input
+          type="checkbox"
+          aria-label="Subscribe"
+          name="subscribe"
+          checked={values.subscribe}
+          onChange={handleChange}
+        />
+      ),
+    );
 
     await user.click(checkbox("Subscribe"));
     expect(result.current.values.subscribe).toBe(true);
@@ -148,18 +191,20 @@ describe("all input types", () => {
   });
 
   it("stores the value of the chosen radio", async () => {
-    const { result, user } = renderForm({ plan: "free" }, ({ values, handleChange }) =>
-      ["free", "pro", "team"].map((plan) => (
-        <input
-          key={plan}
-          type="radio"
-          aria-label={plan}
-          name="plan"
-          value={plan}
-          checked={values.plan === plan}
-          onChange={handleChange}
-        />
-      )),
+    const { result, user } = renderForm(
+      { plan: "free" },
+      ({ values, handleChange }) =>
+        ["free", "pro", "team"].map((plan) => (
+          <input
+            key={plan}
+            type="radio"
+            aria-label={plan}
+            name="plan"
+            value={plan}
+            checked={values.plan === plan}
+            onChange={handleChange}
+          />
+        )),
     );
 
     await user.click(radio("pro"));
@@ -170,12 +215,20 @@ describe("all input types", () => {
   });
 
   it("stores the selected option of a select", async () => {
-    const { result, user } = renderForm({ country: "eg" }, ({ values, handleChange }) => (
-      <select aria-label="Country" name="country" value={values.country} onChange={handleChange}>
-        <option value="eg">Egypt</option>
-        <option value="se">Sweden</option>
-      </select>
-    ));
+    const { result, user } = renderForm(
+      { country: "eg" },
+      ({ values, handleChange }) => (
+        <select
+          aria-label="Country"
+          name="country"
+          value={values.country}
+          onChange={handleChange}
+        >
+          <option value="eg">Egypt</option>
+          <option value="se">Sweden</option>
+        </select>
+      ),
+    );
 
     await user.selectOptions(combobox("Country"), "se");
 
@@ -184,22 +237,29 @@ describe("all input types", () => {
   });
 
   it("stores a multi-select as an array of every selected option", async () => {
-    const { result, user } = renderForm({ toppings: ["cheese"] }, ({ values, handleChange }) => (
-      <select
-        multiple
-        aria-label="Toppings"
-        name="toppings"
-        value={values.toppings}
-        onChange={handleChange}
-      >
-        <option value="cheese">Cheese</option>
-        <option value="olives">Olives</option>
-        <option value="peppers">Peppers</option>
-      </select>
-    ));
+    const { result, user } = renderForm(
+      { toppings: ["cheese"] },
+      ({ values, handleChange }) => (
+        <select
+          multiple
+          aria-label="Toppings"
+          name="toppings"
+          value={values.toppings}
+          onChange={handleChange}
+        >
+          <option value="cheese">Cheese</option>
+          <option value="olives">Olives</option>
+          <option value="peppers">Peppers</option>
+        </select>
+      ),
+    );
 
     await user.selectOptions(listbox("Toppings"), ["olives", "peppers"]);
-    expect(result.current.values.toppings).toEqual(["cheese", "olives", "peppers"]);
+    expect(result.current.values.toppings).toEqual([
+      "cheese",
+      "olives",
+      "peppers",
+    ]);
 
     await user.deselectOptions(listbox("Toppings"), "cheese");
     expect(result.current.values.toppings).toEqual(["olives", "peppers"]);
@@ -232,7 +292,9 @@ describe("all input types", () => {
 
 describe("register", () => {
   it("returns name, value, onChange and onBlur", () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "ada@example.com" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "ada@example.com" } }),
+    );
 
     expect(result.current.register("email")).toMatchObject({
       name: "email",
@@ -323,12 +385,16 @@ describe("register", () => {
   });
 
   it("fails loudly on a name that isn't in the form", () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "" } }),
+    );
     // The compiler catches typos in literals; names that arrive at runtime
     // get past it.
     const fromServer: string = "emial";
 
-    expect(() => result.current.register(fromServer as "email")).toThrow(/emial/);
+    expect(() => result.current.register(fromServer as "email")).toThrow(
+      /emial/,
+    );
   });
 });
 
@@ -370,7 +436,10 @@ describe("programmatic control", () => {
   });
 
   it("reset restores the initial values after typing and setFieldValue", async () => {
-    const { result, user } = renderForm({ first: "Ada", last: "Lovelace" }, nameFields);
+    const { result, user } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
 
     await user.clear(textbox("First"));
     await user.type(textbox("First"), "Grace");
@@ -399,12 +468,15 @@ describe("submission", () => {
   type Submit = (values: SignUp) => void | Promise<void>;
 
   function renderSignUp(onSubmit: Submit) {
-    return renderForm<SignUp>({ email: "" }, ({ register, handleSubmit, isSubmitting }) => (
-      <form aria-label="Sign up" onSubmit={handleSubmit(onSubmit)}>
-        <input aria-label="Email" {...register("email")} />
-        <button type="submit">{isSubmitting ? "Saving…" : "Save"}</button>
-      </form>
-    ));
+    return renderForm<SignUp>(
+      { email: "" },
+      ({ register, handleSubmit, isSubmitting }) => (
+        <form aria-label="Sign up" onSubmit={handleSubmit(onSubmit)}>
+          <input aria-label="Email" {...register("email")} />
+          <button type="submit">{isSubmitting ? "Saving…" : "Save"}</button>
+        </form>
+      ),
+    );
   }
 
   const saveButton = () => screen.getByRole("button");
@@ -426,7 +498,9 @@ describe("submission", () => {
     const pending = deferred();
     renderSignUp(() => pending.promise);
 
-    const notCancelled = fireEvent.submit(screen.getByRole("form", { name: "Sign up" }));
+    const notCancelled = fireEvent.submit(
+      screen.getByRole("form", { name: "Sign up" }),
+    );
 
     expect(notCancelled).toBe(false);
     await settle(pending);
@@ -449,7 +523,9 @@ describe("submission", () => {
   });
 
   it("counts every submit in submitCount", async () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "" } }),
+    );
     expect(result.current.submitCount).toBe(0);
 
     await act(() => result.current.handleSubmit(() => {})());
@@ -489,7 +565,9 @@ describe("submission", () => {
   });
 
   it("recovers when onSubmit throws", async () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "" } }),
+    );
     const onSubmit = vi.fn(async () => {
       throw new Error("Network down");
     });
@@ -514,7 +592,9 @@ describe("submission", () => {
   });
 
   it("reset clears the submit count along with the values", async () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "" } }),
+    );
 
     act(() => result.current.setFieldValue("email", "ada@example.com"));
     await act(() => result.current.handleSubmit(() => {})());
