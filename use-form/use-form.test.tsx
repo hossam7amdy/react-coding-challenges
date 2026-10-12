@@ -1,8 +1,27 @@
-import { useEffect, type ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  configure,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect, type ReactNode } from "react";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
+
 import { useForm, type UseFormReturn } from "./use-form";
+
+configure({ reactStrictMode: true });
 
 // React reports bad input values (NaN, null, controlled <-> uncontrolled) and
 // state updates outside act() through console.error, so any call fails the test.
@@ -66,12 +85,18 @@ async function settle(pending: Deferred) {
   });
 }
 
-const textbox = (name: string) => screen.getByRole<HTMLInputElement>("textbox", { name });
-const spinbutton = (name: string) => screen.getByRole<HTMLInputElement>("spinbutton", { name });
-const checkbox = (name: string) => screen.getByRole<HTMLInputElement>("checkbox", { name });
-const radio = (name: string) => screen.getByRole<HTMLInputElement>("radio", { name });
-const combobox = (name: string) => screen.getByRole<HTMLSelectElement>("combobox", { name });
-const listbox = (name: string) => screen.getByRole<HTMLSelectElement>("listbox", { name });
+const textbox = (name: string) =>
+  screen.getByRole<HTMLInputElement>("textbox", { name });
+const spinbutton = (name: string) =>
+  screen.getByRole<HTMLInputElement>("spinbutton", { name });
+const checkbox = (name: string) =>
+  screen.getByRole<HTMLInputElement>("checkbox", { name });
+const radio = (name: string) =>
+  screen.getByRole<HTMLInputElement>("radio", { name });
+const combobox = (name: string) =>
+  screen.getByRole<HTMLSelectElement>("combobox", { name });
+const listbox = (name: string) =>
+  screen.getByRole<HTMLSelectElement>("listbox", { name });
 const selected = (select: HTMLSelectElement) =>
   Array.from(select.selectedOptions, (option) => option.value);
 
@@ -79,8 +104,18 @@ type Name = { first: string; last: string };
 
 const nameFields = ({ values, handleChange }: UseFormReturn<Name>) => (
   <>
-    <input aria-label="First" name="first" value={values.first} onChange={handleChange} />
-    <input aria-label="Last" name="last" value={values.last} onChange={handleChange} />
+    <input
+      aria-label="First"
+      name="first"
+      value={values.first}
+      onChange={handleChange}
+    />
+    <input
+      aria-label="Last"
+      name="last"
+      value={values.last}
+      onChange={handleChange}
+    />
   </>
 );
 
@@ -95,6 +130,72 @@ const ageField = ({ values, handleChange }: UseFormReturn<{ age: number }>) => (
     onChange={handleChange}
   />
 );
+
+type AllFields = {
+  name: string;
+  bio: string;
+  age: number;
+  subscribe: boolean;
+  plan: string;
+  country: string;
+  toppings: string[];
+};
+
+const blankFields: AllFields = {
+  name: "",
+  bio: "",
+  age: 30,
+  subscribe: false,
+  plan: "free",
+  country: "eg",
+  toppings: [],
+};
+
+/** One input of every type, wired only through `register`. */
+const allFields = ({ register }: UseFormReturn<AllFields>) => (
+  <>
+    <input aria-label="Name" {...register("name")} />
+    <textarea aria-label="Bio" {...register("bio")} />
+    <input type="number" aria-label="Age" {...register("age")} />
+    <input
+      type="checkbox"
+      aria-label="Subscribe"
+      {...register("subscribe", { type: "checkbox" })}
+    />
+    <input
+      type="radio"
+      aria-label="free"
+      {...register("plan", { type: "radio", value: "free" })}
+    />
+    <input
+      type="radio"
+      aria-label="pro"
+      {...register("plan", { type: "radio", value: "pro" })}
+    />
+    <select aria-label="Country" {...register("country")}>
+      <option value="eg">Egypt</option>
+      <option value="se">Sweden</option>
+    </select>
+    <select multiple aria-label="Toppings" {...register("toppings")}>
+      <option value="cheese">Cheese</option>
+      <option value="olives">Olives</option>
+    </select>
+  </>
+);
+
+/**
+ * Reads `allFields` back off the screen. The DOM is what the user sees, so a
+ * field that's right in `values` but wrong here is still a bug.
+ */
+const allFieldsOnScreen = (): AllFields => ({
+  name: textbox("Name").value,
+  bio: textbox("Bio").value,
+  age: spinbutton("Age").valueAsNumber,
+  subscribe: checkbox("Subscribe").checked,
+  plan: ["free", "pro"].find((plan) => radio(plan).checked) ?? "",
+  country: combobox("Country").value,
+  toppings: selected(listbox("Toppings")),
+});
 
 describe("text fields", () => {
   it("shows the initial values", () => {
@@ -116,9 +217,17 @@ describe("text fields", () => {
   });
 
   it("handles a textarea with the same handleChange", async () => {
-    const { result, user } = renderForm({ bio: "" }, ({ values, handleChange }) => (
-      <textarea aria-label="Bio" name="bio" value={values.bio} onChange={handleChange} />
-    ));
+    const { result, user } = renderForm(
+      { bio: "" },
+      ({ values, handleChange }) => (
+        <textarea
+          aria-label="Bio"
+          name="bio"
+          value={values.bio}
+          onChange={handleChange}
+        />
+      ),
+    );
 
     await user.type(textbox("Bio"), "Wrote the first program");
 
@@ -128,15 +237,18 @@ describe("text fields", () => {
 
 describe("all input types", () => {
   it("stores a checkbox as a boolean", async () => {
-    const { result, user } = renderForm({ subscribe: false }, ({ values, handleChange }) => (
-      <input
-        type="checkbox"
-        aria-label="Subscribe"
-        name="subscribe"
-        checked={values.subscribe}
-        onChange={handleChange}
-      />
-    ));
+    const { result, user } = renderForm(
+      { subscribe: false },
+      ({ values, handleChange }) => (
+        <input
+          type="checkbox"
+          aria-label="Subscribe"
+          name="subscribe"
+          checked={values.subscribe}
+          onChange={handleChange}
+        />
+      ),
+    );
 
     await user.click(checkbox("Subscribe"));
     expect(result.current.values.subscribe).toBe(true);
@@ -148,18 +260,20 @@ describe("all input types", () => {
   });
 
   it("stores the value of the chosen radio", async () => {
-    const { result, user } = renderForm({ plan: "free" }, ({ values, handleChange }) =>
-      ["free", "pro", "team"].map((plan) => (
-        <input
-          key={plan}
-          type="radio"
-          aria-label={plan}
-          name="plan"
-          value={plan}
-          checked={values.plan === plan}
-          onChange={handleChange}
-        />
-      )),
+    const { result, user } = renderForm(
+      { plan: "free" },
+      ({ values, handleChange }) =>
+        ["free", "pro", "team"].map((plan) => (
+          <input
+            key={plan}
+            type="radio"
+            aria-label={plan}
+            name="plan"
+            value={plan}
+            checked={values.plan === plan}
+            onChange={handleChange}
+          />
+        )),
     );
 
     await user.click(radio("pro"));
@@ -170,12 +284,20 @@ describe("all input types", () => {
   });
 
   it("stores the selected option of a select", async () => {
-    const { result, user } = renderForm({ country: "eg" }, ({ values, handleChange }) => (
-      <select aria-label="Country" name="country" value={values.country} onChange={handleChange}>
-        <option value="eg">Egypt</option>
-        <option value="se">Sweden</option>
-      </select>
-    ));
+    const { result, user } = renderForm(
+      { country: "eg" },
+      ({ values, handleChange }) => (
+        <select
+          aria-label="Country"
+          name="country"
+          value={values.country}
+          onChange={handleChange}
+        >
+          <option value="eg">Egypt</option>
+          <option value="se">Sweden</option>
+        </select>
+      ),
+    );
 
     await user.selectOptions(combobox("Country"), "se");
 
@@ -184,22 +306,29 @@ describe("all input types", () => {
   });
 
   it("stores a multi-select as an array of every selected option", async () => {
-    const { result, user } = renderForm({ toppings: ["cheese"] }, ({ values, handleChange }) => (
-      <select
-        multiple
-        aria-label="Toppings"
-        name="toppings"
-        value={values.toppings}
-        onChange={handleChange}
-      >
-        <option value="cheese">Cheese</option>
-        <option value="olives">Olives</option>
-        <option value="peppers">Peppers</option>
-      </select>
-    ));
+    const { result, user } = renderForm(
+      { toppings: ["cheese"] },
+      ({ values, handleChange }) => (
+        <select
+          multiple
+          aria-label="Toppings"
+          name="toppings"
+          value={values.toppings}
+          onChange={handleChange}
+        >
+          <option value="cheese">Cheese</option>
+          <option value="olives">Olives</option>
+          <option value="peppers">Peppers</option>
+        </select>
+      ),
+    );
 
     await user.selectOptions(listbox("Toppings"), ["olives", "peppers"]);
-    expect(result.current.values.toppings).toEqual(["cheese", "olives", "peppers"]);
+    expect(result.current.values.toppings).toEqual([
+      "cheese",
+      "olives",
+      "peppers",
+    ]);
 
     await user.deselectOptions(listbox("Toppings"), "cheese");
     expect(result.current.values.toppings).toEqual(["olives", "peppers"]);
@@ -232,7 +361,9 @@ describe("all input types", () => {
 
 describe("register", () => {
   it("returns name, value, onChange and onBlur", () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "ada@example.com" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "ada@example.com" } }),
+    );
 
     expect(result.current.register("email")).toMatchObject({
       name: "email",
@@ -255,48 +386,23 @@ describe("register", () => {
     expect(spinbutton("Age").value).toBe("");
   });
 
+  it("shows the initial value of every registered input", () => {
+    const initialValues: AllFields = {
+      name: "Ada",
+      bio: "Countess",
+      age: 36,
+      subscribe: true,
+      plan: "pro",
+      country: "se",
+      toppings: ["olives"],
+    };
+    renderForm(initialValues, allFields);
+
+    expect(allFieldsOnScreen()).toEqual(initialValues);
+  });
+
   it("wires every input type with no props written by hand", async () => {
-    const { result, user } = renderForm(
-      {
-        name: "",
-        bio: "",
-        age: 30,
-        subscribe: false,
-        plan: "free",
-        country: "eg",
-        toppings: [] as string[],
-      },
-      ({ register }) => (
-        <>
-          <input aria-label="Name" {...register("name")} />
-          <textarea aria-label="Bio" {...register("bio")} />
-          <input type="number" aria-label="Age" {...register("age")} />
-          <input
-            type="checkbox"
-            aria-label="Subscribe"
-            {...register("subscribe", { type: "checkbox" })}
-          />
-          <input
-            type="radio"
-            aria-label="free"
-            {...register("plan", { type: "radio", value: "free" })}
-          />
-          <input
-            type="radio"
-            aria-label="pro"
-            {...register("plan", { type: "radio", value: "pro" })}
-          />
-          <select aria-label="Country" {...register("country")}>
-            <option value="eg">Egypt</option>
-            <option value="se">Sweden</option>
-          </select>
-          <select multiple aria-label="Toppings" {...register("toppings")}>
-            <option value="cheese">Cheese</option>
-            <option value="olives">Olives</option>
-          </select>
-        </>
-      ),
-    );
+    const { result, user } = renderForm(blankFields, allFields);
 
     await user.type(textbox("Name"), "Ada");
     await user.type(textbox("Bio"), "Countess");
@@ -316,19 +422,20 @@ describe("register", () => {
       country: "se",
       toppings: ["cheese", "olives"],
     });
-    expect(checkbox("Subscribe").checked).toBe(true);
-    expect(radio("pro").checked).toBe(true);
-    expect(radio("free").checked).toBe(false);
-    expect(selected(listbox("Toppings"))).toEqual(["cheese", "olives"]);
+    expect(allFieldsOnScreen()).toEqual(result.current.values);
   });
 
   it("fails loudly on a name that isn't in the form", () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "" } }),
+    );
     // The compiler catches typos in literals; names that arrive at runtime
     // get past it.
     const fromServer: string = "emial";
 
-    expect(() => result.current.register(fromServer as "email")).toThrow(/emial/);
+    expect(() => result.current.register(fromServer as "email")).toThrow(
+      /emial/,
+    );
   });
 });
 
@@ -370,7 +477,10 @@ describe("programmatic control", () => {
   });
 
   it("reset restores the initial values after typing and setFieldValue", async () => {
-    const { result, user } = renderForm({ first: "Ada", last: "Lovelace" }, nameFields);
+    const { result, user } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
 
     await user.clear(textbox("First"));
     await user.type(textbox("First"), "Grace");
@@ -380,6 +490,39 @@ describe("programmatic control", () => {
     expect(result.current.values).toEqual({ first: "Ada", last: "Lovelace" });
     expect(textbox("First").value).toBe("Ada");
     expect(textbox("Last").value).toBe("Lovelace");
+  });
+
+  it("setValues shows up in every registered input", () => {
+    const { result } = renderForm(blankFields, allFields);
+    const next: AllFields = {
+      name: "Grace",
+      bio: "Admiral",
+      age: 85,
+      subscribe: true,
+      plan: "pro",
+      country: "se",
+      toppings: ["cheese"],
+    };
+
+    act(() => result.current.setValues(next));
+
+    expect(allFieldsOnScreen()).toEqual(next);
+  });
+
+  it("reset puts every registered input back the way it started", async () => {
+    const { result, user } = renderForm(blankFields, allFields);
+
+    await user.type(textbox("Name"), "Ada");
+    await user.type(textbox("Bio"), "Countess");
+    await user.type(spinbutton("Age"), "6");
+    await user.click(checkbox("Subscribe"));
+    await user.click(radio("pro"));
+    await user.selectOptions(combobox("Country"), "se");
+    await user.selectOptions(listbox("Toppings"), "olives");
+    act(() => result.current.reset());
+
+    expect(result.current.values).toEqual(blankFields);
+    expect(allFieldsOnScreen()).toEqual(blankFields);
   });
 
   it("never mutates the initialValues object", () => {
@@ -399,12 +542,15 @@ describe("submission", () => {
   type Submit = (values: SignUp) => void | Promise<void>;
 
   function renderSignUp(onSubmit: Submit) {
-    return renderForm<SignUp>({ email: "" }, ({ register, handleSubmit, isSubmitting }) => (
-      <form aria-label="Sign up" onSubmit={handleSubmit(onSubmit)}>
-        <input aria-label="Email" {...register("email")} />
-        <button type="submit">{isSubmitting ? "Saving…" : "Save"}</button>
-      </form>
-    ));
+    return renderForm<SignUp>(
+      { email: "" },
+      ({ register, handleSubmit, isSubmitting }) => (
+        <form aria-label="Sign up" onSubmit={handleSubmit(onSubmit)}>
+          <input aria-label="Email" {...register("email")} />
+          <button type="submit">{isSubmitting ? "Saving…" : "Save"}</button>
+        </form>
+      ),
+    );
   }
 
   const saveButton = () => screen.getByRole("button");
@@ -422,11 +568,41 @@ describe("submission", () => {
     await settle(pending);
   });
 
+  // A "Save as draft" button: change a field, then submit, in one click.
+  it("submits a value set earlier in the same click", async () => {
+    type Post = { title: string; status: string };
+    const onSubmit = vi.fn<(values: Post) => void>();
+    const { user } = renderForm<Post>(
+      { title: "Hello", status: "published" },
+      ({ setFieldValue, handleSubmit }) => (
+        <button
+          type="button"
+          onClick={() => {
+            setFieldValue("status", "draft");
+            void handleSubmit(onSubmit)();
+          }}
+        >
+          Save as draft
+        </button>
+      ),
+    );
+
+    await user.click(saveButton());
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toEqual({
+      title: "Hello",
+      status: "draft",
+    });
+  });
+
   it("stops the browser's own form submission", async () => {
     const pending = deferred();
     renderSignUp(() => pending.promise);
 
-    const notCancelled = fireEvent.submit(screen.getByRole("form", { name: "Sign up" }));
+    const notCancelled = fireEvent.submit(
+      screen.getByRole("form", { name: "Sign up" }),
+    );
 
     expect(notCancelled).toBe(false);
     await settle(pending);
@@ -449,7 +625,9 @@ describe("submission", () => {
   });
 
   it("counts every submit in submitCount", async () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "" } }),
+    );
     expect(result.current.submitCount).toBe(0);
 
     await act(() => result.current.handleSubmit(() => {})());
@@ -489,7 +667,9 @@ describe("submission", () => {
   });
 
   it("recovers when onSubmit throws", async () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "" } }),
+    );
     const onSubmit = vi.fn(async () => {
       throw new Error("Network down");
     });
@@ -509,12 +689,18 @@ describe("submission", () => {
 
     expect(onSubmit).toHaveBeenCalledTimes(2);
     expect(result.current.isSubmitting).toBe(false);
-    // Logging the failure is fine too.
+    // Logging this failure is fine too, but any other error still fails the
+    // test.
+    for (const args of consoleError.mock.calls) {
+      expect(args.map(String).join(" ")).toMatch(/Network down/);
+    }
     consoleError.mockClear();
   });
 
   it("reset clears the submit count along with the values", async () => {
-    const { result } = renderHook(() => useForm({ initialValues: { email: "" } }));
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "" } }),
+    );
 
     act(() => result.current.setFieldValue("email", "ada@example.com"));
     await act(() => result.current.handleSubmit(() => {})());
