@@ -19,15 +19,24 @@ import {
   type MockInstance,
 } from "vitest";
 
-import { useForm, type UseFormReturn } from "./use-form";
+import { useForm as useFormUnderTest, type UseFormReturn } from "./use-form";
 
 configure({ reactStrictMode: true });
+
+// An update loop would hang the whole run inside act(), so fail the test instead.
+let renders = 0;
+
+const useForm: typeof useFormUnderTest = (options) => {
+  if (++renders > 1000) throw new Error("useForm keeps re-rendering");
+  return useFormUnderTest(options);
+};
 
 // React reports bad input values (NaN, null, controlled <-> uncontrolled) and
 // state updates outside act() through console.error, so any call fails the test.
 let consoleError: MockInstance<typeof console.error>;
 
 beforeEach(() => {
+  renders = 0;
   consoleError = vi.spyOn(console, "error");
 });
 
@@ -50,19 +59,33 @@ function renderForm<T extends Record<string, unknown>>(
   fields: (form: UseFormReturn<T>) => ReactNode,
 ) {
   const result = { current: undefined as unknown as UseFormReturn<T> };
+  // What each committed render returned, oldest first.
+  const commits: UseFormReturn<T>[] = [];
 
-  function Form() {
+  function Form({ initialValues }: { initialValues: T }) {
     const form = useForm({ initialValues });
     useEffect(() => {
       result.current = form;
+      commits.push(form);
     });
     return fields(form);
   }
 
   const user = userEvent.setup();
-  render(<Form />);
-  return { result, user };
+  const view = render(<Form initialValues={initialValues} />);
+  /** Re-renders with new initial values, like a parent whose query resolved. */
+  const rerender = (next: T) => view.rerender(<Form initialValues={next} />);
+  return { result, user, commits, rerender };
 }
+
+/**
+ * The names a `touched` or `dirty` map flags, sorted. Whether an untouched or
+ * clean field is `false` or missing is up to you.
+ */
+const flagged = (map: Partial<Record<string, boolean>>) =>
+  Object.keys(map)
+    .filter((name) => map[name])
+    .sort();
 
 interface Deferred {
   promise: Promise<void>;
@@ -102,19 +125,25 @@ const selected = (select: HTMLSelectElement) =>
 
 type Name = { first: string; last: string };
 
-const nameFields = ({ values, handleChange }: UseFormReturn<Name>) => (
+const nameFields = ({
+  values,
+  handleChange,
+  handleBlur,
+}: UseFormReturn<Name>) => (
   <>
     <input
       aria-label="First"
       name="first"
       value={values.first}
       onChange={handleChange}
+      onBlur={handleBlur}
     />
     <input
       aria-label="Last"
       name="last"
       value={values.last}
       onChange={handleChange}
+      onBlur={handleBlur}
     />
   </>
 );
@@ -492,6 +521,25 @@ describe("programmatic control", () => {
     expect(textbox("Last").value).toBe("Lovelace");
   });
 
+  it("reset works when passed straight to a button's onClick", async () => {
+    const { result, user } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      (form) => (
+        <>
+          {nameFields(form)}
+          <button type="button" onClick={form.reset}>
+            Reset
+          </button>
+        </>
+      ),
+    );
+
+    await user.type(textbox("First"), " King");
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(result.current.values).toEqual({ first: "Ada", last: "Lovelace" });
+  });
+
   it("setValues shows up in every registered input", () => {
     const { result } = renderForm(blankFields, allFields);
     const next: AllFields = {
@@ -534,6 +582,18 @@ describe("programmatic control", () => {
 
     act(() => result.current.reset());
     expect(result.current.values).toEqual({ first: "Ada", last: "Lovelace" });
+  });
+
+  it("keeps a Date in one field a Date when another field changes", () => {
+    const { result } = renderHook(() =>
+      useForm({
+        initialValues: { name: "Ada", born: new Date("1815-12-10") },
+      }),
+    );
+
+    act(() => result.current.setFieldValue("name", "Grace"));
+
+    expect(result.current.values.born).toEqual(new Date("1815-12-10"));
   });
 });
 
@@ -593,6 +653,28 @@ describe("submission", () => {
     expect(onSubmit.mock.calls[0][0]).toEqual({
       title: "Hello",
       status: "draft",
+    });
+  });
+
+  it("submits a value a child component sets when it mounts", async () => {
+    type Address = { street: string; country: string };
+    function DefaultCountry({
+      setFieldValue,
+    }: Pick<UseFormReturn<Address>, "setFieldValue">) {
+      useEffect(() => setFieldValue("country", "eg"), [setFieldValue]);
+      return null;
+    }
+    const onSubmit = vi.fn<(values: Address) => void>();
+    const { result } = renderForm<Address>(
+      { street: "Baker Street", country: "" },
+      ({ setFieldValue }) => <DefaultCountry setFieldValue={setFieldValue} />,
+    );
+
+    await act(() => result.current.handleSubmit(onSubmit)());
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      street: "Baker Street",
+      country: "eg",
     });
   });
 
@@ -666,6 +748,26 @@ describe("submission", () => {
     await settle(pending);
   });
 
+  it("submits the current values once when initialValues is a new object on every render", async () => {
+    const pending = deferred();
+    const onSubmit = vi.fn<Submit>(() => pending.promise);
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { email: "" } }),
+    );
+
+    act(() => result.current.setFieldValue("email", "ada@example.com"));
+    await act(async () => {
+      void result.current.handleSubmit(onSubmit)();
+    });
+    await act(async () => {
+      void result.current.handleSubmit(onSubmit)();
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith({ email: "ada@example.com" });
+    await settle(pending);
+  });
+
   it("recovers when onSubmit throws", async () => {
     const { result } = renderHook(() =>
       useForm({ initialValues: { email: "" } }),
@@ -711,5 +813,338 @@ describe("submission", () => {
     expect(result.current.values).toEqual({ email: "" });
     expect(result.current.submitCount).toBe(0);
     expect(result.current.isSubmitting).toBe(false);
+  });
+});
+
+describe("touched", () => {
+  it("touches a field when it's left, not when it's focused or typed in", async () => {
+    const { result, user } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
+    expect(flagged(result.current.touched)).toEqual([]);
+
+    await user.type(textbox("First"), " King");
+    expect(flagged(result.current.touched)).toEqual([]);
+
+    await user.tab();
+    expect(flagged(result.current.touched)).toEqual(["first"]);
+  });
+
+  it("touches every registered input type when it loses focus", async () => {
+    const { result, user } = renderForm(blankFields, allFields);
+
+    await user.tab();
+    while (document.activeElement !== document.body) await user.tab();
+
+    expect(flagged(result.current.touched)).toEqual(
+      Object.keys(blankFields).sort(),
+    );
+  });
+
+  it("leaves a visited field clean and a field set from code untouched", async () => {
+    const { result, user } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
+
+    await user.click(textbox("First"));
+    await user.tab();
+    act(() => result.current.setFieldValue("last", "Byron"));
+
+    expect(flagged(result.current.touched)).toEqual(["first"]);
+    expect(flagged(result.current.dirty)).toEqual(["last"]);
+  });
+
+  it("reset clears touched and dirty", async () => {
+    const { result, user } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
+
+    await user.type(textbox("First"), " King");
+    await user.tab();
+    act(() => result.current.reset());
+
+    expect(flagged(result.current.touched)).toEqual([]);
+    expect(flagged(result.current.dirty)).toEqual([]);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it("keeps the same values object when a field is touched", async () => {
+    const { result, user } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
+    const values = result.current.values;
+
+    await user.click(textbox("First"));
+    await user.tab();
+
+    expect(flagged(result.current.touched)).toEqual(["first"]);
+    expect(result.current.values).toBe(values);
+  });
+});
+
+describe("dirty", () => {
+  it("tracks each field and the whole form, clean again once typed back", async () => {
+    const { result, user } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
+    expect(flagged(result.current.dirty)).toEqual([]);
+    expect(result.current.isDirty).toBe(false);
+
+    await user.type(textbox("First"), "!");
+    await user.type(textbox("Last"), "!");
+    expect(flagged(result.current.dirty)).toEqual(["first", "last"]);
+
+    await user.type(textbox("First"), "{Backspace}");
+    expect(flagged(result.current.dirty)).toEqual(["last"]);
+    expect(result.current.isDirty).toBe(true);
+
+    await user.type(textbox("Last"), "{Backspace}");
+    expect(flagged(result.current.dirty)).toEqual([]);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it("is clean again once number, checkbox, radio and select fields are changed back", async () => {
+    const { result, user } = renderForm(blankFields, allFields);
+
+    await user.clear(spinbutton("Age"));
+    await user.click(checkbox("Subscribe"));
+    await user.click(radio("pro"));
+    await user.selectOptions(combobox("Country"), "se");
+    await user.selectOptions(listbox("Toppings"), "olives");
+    expect(flagged(result.current.dirty)).toEqual([
+      "age",
+      "country",
+      "plan",
+      "subscribe",
+      "toppings",
+    ]);
+
+    await user.type(spinbutton("Age"), "30");
+    await user.click(checkbox("Subscribe"));
+    await user.click(radio("free"));
+    await user.selectOptions(combobox("Country"), "eg");
+    await user.deselectOptions(listbox("Toppings"), "olives");
+    expect(flagged(result.current.dirty)).toEqual([]);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it("compares arrays item by item, not by length", async () => {
+    const { result, user } = renderForm(
+      { toppings: ["cheese"] },
+      ({ register }) => (
+        <select multiple aria-label="Toppings" {...register("toppings")}>
+          <option value="cheese">Cheese</option>
+          <option value="olives">Olives</option>
+        </select>
+      ),
+    );
+
+    await user.selectOptions(listbox("Toppings"), "olives");
+    await user.deselectOptions(listbox("Toppings"), "cheese");
+    expect(result.current.values.toppings).toEqual(["olives"]);
+    expect(flagged(result.current.dirty)).toEqual(["toppings"]);
+
+    await user.selectOptions(listbox("Toppings"), "cheese");
+    await user.deselectOptions(listbox("Toppings"), "olives");
+    expect(flagged(result.current.dirty)).toEqual([]);
+  });
+
+  it("compares dates to the millisecond, not by reference", () => {
+    const { result } = renderHook(() =>
+      useForm({
+        initialValues: { born: new Date("1815-12-10T00:00:00.000Z") },
+      }),
+    );
+
+    act(() =>
+      result.current.setFieldValue(
+        "born",
+        new Date("1815-12-10T00:00:00.001Z"),
+      ),
+    );
+    expect(flagged(result.current.dirty)).toEqual(["born"]);
+
+    act(() =>
+      result.current.setFieldValue(
+        "born",
+        new Date("1815-12-10T00:00:00.000Z"),
+      ),
+    );
+    expect(flagged(result.current.dirty)).toEqual([]);
+  });
+
+  it("treats an invalid initial date as clean", () => {
+    const { result } = renderHook(() =>
+      useForm({ initialValues: { born: new Date("not a date") } }),
+    );
+
+    expect(flagged(result.current.dirty)).toEqual([]);
+  });
+
+  it("treats a null initial value as clean", () => {
+    const { result } = renderHook(() =>
+      useForm({
+        initialValues: { name: "Ada", middleName: null as string | null },
+      }),
+    );
+
+    act(() => result.current.setFieldValue("name", "Grace"));
+
+    expect(flagged(result.current.dirty)).toEqual(["name"]);
+  });
+
+  it("setValues re-checks every field against the initial values", async () => {
+    const { result, user } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
+
+    await user.type(textbox("First"), "!");
+    act(() => result.current.setValues({ first: "Ada", last: "Byron" }));
+
+    expect(flagged(result.current.dirty)).toEqual(["last"]);
+  });
+
+  it("updates isDirty in the same render as the values", async () => {
+    const { user, commits } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
+
+    await user.type(textbox("First"), "!{Backspace}");
+
+    expect(commits.length).toBeGreaterThan(2);
+    for (const { values, isDirty } of commits) {
+      expect(isDirty).toBe(values.first !== "Ada");
+    }
+  });
+});
+
+describe("late initial values", () => {
+  const loaded: AllFields = {
+    name: "Ada",
+    bio: "Countess",
+    age: 36,
+    subscribe: true,
+    plan: "pro",
+    country: "se",
+    toppings: ["olives"],
+  };
+
+  it("loads data that arrives after mount without any render reporting it dirty", () => {
+    const { result, commits, rerender } = renderForm(blankFields, allFields);
+
+    rerender(loaded);
+
+    expect(result.current.values).toEqual(loaded);
+    expect(allFieldsOnScreen()).toEqual(loaded);
+    expect(commits.map((form) => form.isDirty)).not.toContain(true);
+  });
+
+  it("keeps unsaved edits through a refetch and refreshes every clean field", async () => {
+    const { result, user, rerender } = renderForm(loaded, allFields);
+
+    await user.type(textbox("Name"), " King");
+    await user.selectOptions(listbox("Toppings"), "cheese");
+    await user.deselectOptions(listbox("Toppings"), "cheese");
+
+    rerender({
+      name: "Augusta",
+      bio: "Mathematician",
+      age: 37,
+      subscribe: false,
+      plan: "free",
+      country: "eg",
+      toppings: [],
+    });
+
+    const expected: AllFields = {
+      name: "Ada King",
+      bio: "Mathematician",
+      age: 37,
+      subscribe: false,
+      plan: "free",
+      country: "eg",
+      toppings: [],
+    };
+    expect(result.current.values).toEqual(expected);
+    expect(allFieldsOnScreen()).toEqual(expected);
+    expect(flagged(result.current.dirty)).toEqual(["name"]);
+  });
+
+  it("reset goes back to the latest initial values", async () => {
+    const { result, user, rerender } = renderForm(
+      { first: "", last: "" },
+      nameFields,
+    );
+    rerender({ first: "Ada", last: "Lovelace" });
+
+    await user.type(textbox("Last"), " Byron");
+    act(() => result.current.reset());
+
+    expect(result.current.values).toEqual({ first: "Ada", last: "Lovelace" });
+  });
+
+  it("submits the loaded data and is clean once the saved data is refetched", async () => {
+    const { result, user, rerender } = renderForm(
+      { first: "", last: "" },
+      nameFields,
+    );
+    rerender({ first: "Ada", last: "Lovelace" });
+    await user.clear(textbox("Last"));
+    await user.type(textbox("Last"), "Byron");
+
+    const onSubmit = vi.fn<(values: Name) => void>();
+    await act(() => result.current.handleSubmit(onSubmit)());
+    expect(onSubmit).toHaveBeenCalledWith({ first: "Ada", last: "Byron" });
+
+    rerender({ first: "Ada", last: "Byron" });
+    expect(result.current.values).toEqual({ first: "Ada", last: "Byron" });
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it("keeps touched fields touched through a refetch", async () => {
+    const { result, user, rerender } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
+
+    await user.click(textbox("First"));
+    await user.tab();
+    rerender({ first: "Augusta", last: "King" });
+
+    expect(flagged(result.current.touched)).toEqual(["first"]);
+  });
+
+  it("ignores equal initial values passed as new objects and arrays", () => {
+    const { result, rerender } = renderHook(() =>
+      useForm({ initialValues: { name: "Ada", toppings: ["cheese"] } }),
+    );
+
+    const pristine = result.current.values;
+    rerender();
+    expect(result.current.values).toBe(pristine);
+
+    act(() => result.current.setFieldValue("name", "Grace"));
+    const edited = result.current.values;
+    rerender();
+    expect(result.current.values).toBe(edited);
+  });
+
+  it("ignores equal initial values with their keys in another order", () => {
+    const { result, rerender } = renderForm(
+      { first: "Ada", last: "Lovelace" },
+      nameFields,
+    );
+    const values = result.current.values;
+
+    rerender({ last: "Lovelace", first: "Ada" });
+
+    expect(result.current.values).toBe(values);
   });
 });

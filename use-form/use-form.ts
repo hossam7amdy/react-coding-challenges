@@ -1,7 +1,9 @@
 import {
   useRef,
+  useMemo,
   useState,
   useReducer,
+  useLayoutEffect,
   useCallback,
   type FocusEvent,
   type ChangeEvent,
@@ -30,8 +32,16 @@ export interface FieldProps {
   onBlur: (event: FocusEvent<FieldElement>) => void;
 }
 
-export interface UseFormReturn<T> {
+interface FormState<T> {
   values: T;
+  isSubmitting: boolean;
+  submitCount: number;
+  touched: { [key in keyof T]: boolean };
+}
+
+export interface UseFormReturn<T> extends FormState<T> {
+  isDirty: boolean;
+  dirty: { [key in keyof T]: boolean };
   handleChange: (event: ChangeEvent<FieldElement>) => void;
   handleBlur: (event: FocusEvent<FieldElement>) => void;
   register: (name: keyof T & string, options?: RegisterOptions) => FieldProps;
@@ -41,24 +51,83 @@ export interface UseFormReturn<T> {
   handleSubmit: (
     onSubmit: (values: T) => void | Promise<void>,
   ) => (event?: SubmitEvent<HTMLFormElement>) => Promise<void>;
-  isSubmitting: boolean;
-  submitCount: number;
-}
-
-interface FormState<T> {
-  values: T;
-  isSubmitting: boolean;
-  submitCount: number;
 }
 
 type Action<T> =
   | { type: "set-field"; name: keyof T; value: T[keyof T] }
   | { type: "merge"; payload: Partial<T> }
   | { type: "reset"; payload: T }
+  | { type: "reinitialize"; values: T; dirty: { [key in keyof T]: boolean } }
   | { type: "submit-start" }
-  | { type: "submit-end" };
+  | { type: "submit-end" }
+  | { type: "touched"; field: keyof T };
 
-function reducer<T>(state: FormState<T>, action: Action<T>): FormState<T> {
+function createInitState<T extends Record<string, unknown>>(
+  initialValues: T,
+): FormState<T> {
+  const touched = {} as FormState<T>["touched"];
+  for (const field of Object.keys(initialValues)) {
+    touched[field as keyof T] = false;
+  }
+  return {
+    submitCount: 0,
+    isSubmitting: false,
+    values: { ...initialValues },
+    touched,
+  };
+}
+
+function isEqualArray(a: Array<unknown>, b: Array<unknown>): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  let equal = true;
+  for (let i = 0; i < a.length && equal; i++) {
+    equal = isEqual(a[i], b[i]);
+  }
+  return equal;
+}
+function isEqualObject(a: object, b: object): boolean {
+  const aKeys = Object.keys(a).sort() as (keyof typeof a)[];
+  const bKeys = Object.keys(b).sort() as (keyof typeof b)[];
+
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+
+  let equal = true;
+  for (let i = 0; i < aKeys.length && equal; i++) {
+    if (aKeys[i] !== bKeys[i]) {
+      return false;
+    }
+    equal = isEqual(a[aKeys[i]], b[bKeys[i]]);
+  }
+  return equal;
+}
+function isEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (a instanceof Date && b instanceof Date) {
+    return isEqual(a.getTime(), b.getTime());
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return isEqualArray(a, b);
+  }
+  if (
+    typeof a === "object" &&
+    a !== null &&
+    typeof b === "object" &&
+    b !== null
+  ) {
+    return isEqualObject(a, b);
+  }
+  return false;
+}
+
+function reducer<T extends Record<string, unknown>>(
+  state: FormState<T>,
+  action: Action<T>,
+): FormState<T> {
   switch (action.type) {
     case "set-field":
       return {
@@ -71,12 +140,7 @@ function reducer<T>(state: FormState<T>, action: Action<T>): FormState<T> {
         values: { ...state.values, ...action.payload },
       };
     case "reset":
-      return {
-        ...state,
-        submitCount: 0,
-        isSubmitting: false,
-        values: action.payload,
-      };
+      return createInitState(action.payload);
     case "submit-start":
       return {
         ...state,
@@ -88,6 +152,25 @@ function reducer<T>(state: FormState<T>, action: Action<T>): FormState<T> {
         ...state,
         isSubmitting: false,
       };
+    case "touched":
+      return {
+        ...state,
+        touched: { ...state.touched, [action.field]: true },
+      };
+    case "reinitialize": {
+      const { values, dirty } = action;
+      const newValues = {} as T;
+      for (const key of Object.keys(values)) {
+        const field = key as keyof T;
+        if (!dirty[field]) {
+          newValues[field] = values[field];
+        }
+      }
+      return {
+        ...state,
+        values: { ...state.values, ...newValues },
+      };
+    }
     default:
       throw new Error("Invalid action type", { cause: action });
   }
@@ -96,17 +179,20 @@ function reducer<T>(state: FormState<T>, action: Action<T>): FormState<T> {
 export function useForm<T extends Record<string, unknown>>(
   options: UseFormOptions<T>,
 ): UseFormReturn<T> {
-  const initState = {
-    submitCount: 0,
-    isSubmitting: false,
-    values: options.initialValues,
-  };
-  const ref = useRef(initState);
-  const [state, dispatch] = useReducer(reducer, initState);
-  const [config] = useState(() => ({
+  const [state, dispatch] = useReducer(
+    reducer<T>,
+    options.initialValues,
+    createInitState<T>,
+  );
+  const ref = useRef(state);
+  const [config, setConfig] = useState(() => ({
     initialValues: options.initialValues,
     formKeys: Object.keys(options.initialValues) as (keyof T)[],
   }));
+
+  useLayoutEffect(() => {
+    ref.current = state;
+  }, [state]);
 
   const handleDispatch = useCallback((action: Action<T>) => {
     ref.current = reducer(ref.current, action);
@@ -138,10 +224,14 @@ export function useForm<T extends Record<string, unknown>>(
     [handleDispatch],
   );
 
-  const handleBlur = useCallback<UseFormReturn<T>["handleBlur"]>((e) => {
-    const { name } = e.target;
-    if (!name || name != null) return;
-  }, []);
+  const handleBlur = useCallback<UseFormReturn<T>["handleBlur"]>(
+    (e) => {
+      const name = e.target.name as keyof T;
+      if (!name || ref.current.touched[name]) return;
+      handleDispatch({ type: "touched", field: name });
+    },
+    [handleDispatch],
+  );
 
   const handleReset = useCallback<UseFormReturn<T>["reset"]>(() => {
     handleDispatch({ type: "reset", payload: config.initialValues });
@@ -212,8 +302,33 @@ export function useForm<T extends Record<string, unknown>>(
     [config, state, handleChange, handleBlur],
   );
 
+  const dirty = useMemo(() => {
+    const initialValues = config.initialValues;
+    const dirty = {} as { [key in keyof T]: boolean };
+    for (const [field, value] of Object.entries(state.values)) {
+      const isNotEqual = !isEqual(value, initialValues[field]);
+      dirty[field as keyof T] = isNotEqual;
+    }
+    return dirty;
+  }, [state.values, config.initialValues]);
+
+  const isDirty = useMemo(() => Object.values(dirty).some(Boolean), [dirty]);
+
+  const isInitValuesChanged = !isEqual(
+    config.initialValues,
+    options.initialValues,
+  );
+
+  if (isInitValuesChanged) {
+    const initialValues = options.initialValues;
+    dispatch({ type: "reinitialize", values: initialValues, dirty });
+    setConfig((prev) => ({ ...prev, initialValues }));
+  }
+
   return {
     ...state,
+    dirty,
+    isDirty,
     register,
     handleBlur,
     handleSubmit,
